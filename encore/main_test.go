@@ -29,6 +29,14 @@ type encoreSetting struct {
 	Version string `json:"version"`
 }
 
+type panicParentService struct {
+	services.Service
+}
+
+func (s panicParentService) Parent() services.Service {
+	panic("boom")
+}
+
 func TestNewHandlerRejectsInvalidServices(t *testing.T) {
 	t.Parallel()
 
@@ -42,6 +50,34 @@ func TestNewHandlerRejectsInvalidServices(t *testing.T) {
 	if _, err := NewHandler(child); !errors.Is(err, ErrInvalidRootService) {
 		t.Fatalf("expected ErrInvalidRootService, got %v", err)
 	}
+}
+
+func TestNewHandlerRethrowsNonErrorPanics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		value := recover()
+		if value != "boom" {
+			t.Fatalf("expected boom panic, got %#v", value)
+		}
+	}()
+	_, _ = NewHandler(panicParentService{Service: services.MustCreateCollectionService[int, *encoreStore]("stores", "store_id", memory.NewStorage[int, *encoreStore]())})
+}
+
+func TestWrapContextReturnsRequestEnvelope(t *testing.T) {
+	t.Parallel()
+
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		wrapped := WrapContext(response, request)
+		wrapped.SetData("seen", true)
+		value, ok := wrapped.GetData("seen")
+		if !ok || value != true || wrapped.Native() == nil {
+			t.Fatalf("unexpected wrapped context state: ok=%v value=%#v native=%#v", ok, value, wrapped.Native())
+		}
+		_ = wrapped.RenderNoContent(http.StatusNoContent)
+	})
+
+	requireStatus(t, performRequest(t, handler, http.MethodGet, "/items", nil), http.StatusNoContent)
 }
 
 func TestMustNewHandlerPanicsForInvalidServices(t *testing.T) {

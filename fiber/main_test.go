@@ -94,6 +94,35 @@ type fiberSetting struct {
 	Version string `json:"version"`
 }
 
+type fiberSoftSetting struct {
+	memory.SoftDeletedResource[int]
+	Version string `json:"version"`
+}
+
+type fiberStoreProfile struct {
+	memory.Resource[int]
+	StoreID int    `json:"store_id"`
+	Note    string `json:"note"`
+}
+
+type panicParentService struct {
+	*testService
+}
+
+func (s panicParentService) Parent() services.Service {
+	panic("boom")
+}
+
+type fakeRouter struct{}
+
+func (fakeRouter) Add([]string, string, any, ...any) fiberv3.Router {
+	panic("unexpected Add")
+}
+
+func (fakeRouter) Group(string, ...any) fiberv3.Router {
+	panic("unexpected Group")
+}
+
 func TestInstallRejectsInvalidRootInputs(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +137,26 @@ func TestInstallRejectsInvalidRootInputs(t *testing.T) {
 	child := &testService{prefix: "children", parent: parent}
 	if err := Install(app, child); !errors.Is(err, ErrInvalidRootService) {
 		t.Fatalf("expected ErrInvalidRootService, got %v", err)
+	}
+}
+
+func TestInstallRethrowsNonErrorPanics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		value := recover()
+		if value != "boom" {
+			t.Fatalf("expected boom panic, got %#v", value)
+		}
+	}()
+	_ = Install(fiberv3.New(), panicParentService{testService: &testService{prefix: "items"}})
+}
+
+func TestIsNilRouterWithValueRouter(t *testing.T) {
+	t.Parallel()
+
+	if isNilRouter(fakeRouter{}) {
+		t.Fatal("expected value router not to be nil")
 	}
 }
 
@@ -226,6 +275,65 @@ func TestContextRequestAndResponseHelpers(t *testing.T) {
 	}
 	if body := readBody(t, response); !containsAll(body, `"name":"Main"`, `"first_tag":"a"`, `"tag_count":2`, `"header":"one"`, `"header_count":1`, `"cookie":"abc"`) {
 		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestContextMissingRequestHelpers(t *testing.T) {
+	t.Parallel()
+
+	app := fiberv3.New()
+	service := &testService{
+		prefix: "items",
+		urlArg: "item_id",
+		verbs:  utils.NewFlags(services.ResourceList),
+		collections: []services.ExtraEndpoint{{
+			Method: http.MethodGet,
+			Name:   "inspect",
+			Handler: func(context services.Context) error {
+				results := map[string]bool{}
+				_, err := context.GetPathParam("missing")
+				results["path"] = err == nil
+				_, err = context.GetQueryParam("missing")
+				results["query"] = err == nil
+				_, err = context.GetQueryParams("missing")
+				results["queries"] = err == nil
+				_, err = context.GetHeader("missing")
+				results["header"] = err == nil
+				_, err = context.GetHeaders("missing")
+				results["headers"] = err == nil
+				_, err = context.GetCookie("missing")
+				results["cookie"] = err == nil
+				_, ok := context.PopElement()
+				results["pop"] = ok
+				return context.RenderJSON(http.StatusOK, results)
+			},
+		}},
+	}
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	response := performRequest(t, app, http.MethodGet, "/items/inspect", nil)
+	requireStatus(t, response, http.StatusOK)
+	if body := readBody(t, response); !containsAll(body, `"path":false`, `"query":false`, `"queries":false`, `"header":false`, `"headers":false`, `"cookie":false`, `"pop":false`) {
+		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestFiberSameSiteMapping(t *testing.T) {
+	t.Parallel()
+
+	if toFiberSameSite(services.CookieSameSiteLax) != "Lax" {
+		t.Fatal("expected Lax same-site mapping")
+	}
+	if toFiberSameSite(services.CookieSameSiteStrict) != "Strict" {
+		t.Fatal("expected Strict same-site mapping")
+	}
+	if toFiberSameSite(services.CookieSameSiteNone) != "None" {
+		t.Fatal("expected None same-site mapping")
+	}
+	if toFiberSameSite(services.CookieSameSiteDefault) != "" {
+		t.Fatal("expected default same-site mapping")
 	}
 }
 
@@ -349,6 +457,8 @@ func TestInstallNestedAndDeletedRoutes(t *testing.T) {
 	storeService := services.MustCreateCollectionService[int, *fiberStore]("stores", "store_id", memory.NewStorage[int, *fiberStore]())
 	catalogService := services.MustCreateCollectionService[int, *fiberCatalog]("catalogs", "catalog_id", memory.NewStorage[int, *fiberCatalog]())
 	catalogService.MustAttachTo(storeService, "store_id")
+	profileService := services.MustCreateSingletonService[int, *fiberStoreProfile]("profile", memory.NewStorage[int, *fiberStoreProfile]())
+	profileService.MustAttachTo(storeService, "store_id")
 	if err := Install(app, storeService); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
@@ -366,8 +476,17 @@ func TestInstallNestedAndDeletedRoutes(t *testing.T) {
 		t.Fatalf("expected child constraint %d, got %#v", store.ID, catalog)
 	}
 
+	profileResponse := performRequest(t, app, http.MethodPost, "/stores/"+strconv.Itoa(store.ID)+"/profile", map[string]any{"note": "Scoped"})
+	requireStatus(t, profileResponse, http.StatusCreated)
+	var profile fiberStoreProfile
+	decodeJSON(t, profileResponse, &profile)
+	if profile.StoreID != store.ID {
+		t.Fatalf("expected profile constraint %d, got %#v", store.ID, profile)
+	}
+
 	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/"+strconv.Itoa(store.ID)+"/catalogs", nil), http.StatusOK)
 	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/"+strconv.Itoa(store.ID)+"/catalogs/"+strconv.Itoa(catalog.ID), nil), http.StatusOK)
+	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/"+strconv.Itoa(store.ID)+"/profile", nil), http.StatusOK)
 	requireStatus(t, performRequest(t, app, http.MethodDelete, "/stores/"+strconv.Itoa(store.ID), nil), http.StatusNoContent)
 	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/deleted", nil), http.StatusOK)
 	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/deleted/"+strconv.Itoa(store.ID), nil), http.StatusOK)
@@ -376,6 +495,24 @@ func TestInstallNestedAndDeletedRoutes(t *testing.T) {
 	requireStatus(t, performRequest(t, app, http.MethodDelete, "/stores/"+strconv.Itoa(store.ID), nil), http.StatusNoContent)
 	requireStatus(t, performRequest(t, app, http.MethodDelete, "/stores/deleted/"+strconv.Itoa(store.ID), nil), http.StatusNoContent)
 	requireStatus(t, performRequest(t, app, http.MethodGet, "/stores/deleted/"+strconv.Itoa(store.ID), nil), http.StatusNotFound)
+}
+
+func TestInstallSoftDeletedSingletonRoutes(t *testing.T) {
+	t.Parallel()
+
+	app := fiberv3.New()
+	service := services.MustCreateSingletonService[int, *fiberSoftSetting]("platform", memory.NewStorage[int, *fiberSoftSetting]())
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	requireStatus(t, performRequest(t, app, http.MethodPost, "/platform", map[string]any{"version": "2026.9"}), http.StatusCreated)
+	requireStatus(t, performRequest(t, app, http.MethodDelete, "/platform", nil), http.StatusNoContent)
+	requireStatus(t, performRequest(t, app, http.MethodGet, "/platform/deleted", nil), http.StatusOK)
+	requireStatus(t, performRequest(t, app, http.MethodPost, "/platform/deleted", nil), http.StatusOK)
+	requireStatus(t, performRequest(t, app, http.MethodDelete, "/platform", nil), http.StatusNoContent)
+	requireStatus(t, performRequest(t, app, http.MethodDelete, "/platform/deleted", nil), http.StatusNoContent)
+	requireStatus(t, performRequest(t, app, http.MethodGet, "/platform/deleted", nil), http.StatusNotFound)
 }
 
 func performRequest(t *testing.T, app *fiberv3.App, method string, target string, body any) *http.Response {

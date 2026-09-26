@@ -111,6 +111,24 @@ func TestInstallRejectsInvalidRootInputs(t *testing.T) {
 	}
 }
 
+func TestWrapContextReturnsRequestEnvelope(t *testing.T) {
+	t.Parallel()
+
+	router := chiv5.NewRouter()
+	router.Get("/items/{item_id}", func(response http.ResponseWriter, request *http.Request) {
+		wrapped := WrapContext(response, request)
+		pathParam, _ := wrapped.GetPathParam("item_id")
+		wrapped.SetData("seen", true)
+		value, ok := wrapped.GetData("seen")
+		if pathParam != "42" || !ok || value != true {
+			t.Fatalf("unexpected wrapped context state: path=%q ok=%v value=%#v", pathParam, ok, value)
+		}
+		_ = wrapped.RenderNoContent(http.StatusNoContent)
+	})
+
+	requireStatus(t, performRequest(t, router, http.MethodGet, "/items/42", nil), http.StatusNoContent)
+}
+
 func TestMustInstallPanicsForInvalidRootInputs(t *testing.T) {
 	t.Parallel()
 
