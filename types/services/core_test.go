@@ -172,6 +172,26 @@ func TestAddElementExtraRegistersAndForcesGetForExplicitVerbs(t *testing.T) {
 	}
 }
 
+func TestAddCollectionExtraRegistersEndpoint(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+
+	err := service.AddCollectionExtra("delete", "archive", func(Context) error { return nil })
+	if err != nil {
+		t.Fatalf("AddCollectionExtra returned error: %v", err)
+	}
+
+	extras := service.CollectionExtras()
+	if len(extras) != 1 || extras[0].Method != "DELETE" || extras[0].Name != "archive" {
+		t.Fatalf("unexpected collection extras: %#v", extras)
+	}
+}
+
 func TestAddCollectionExtraRejectsSingleton(t *testing.T) {
 	t.Parallel()
 
@@ -184,6 +204,26 @@ func TestAddCollectionExtraRejectsSingleton(t *testing.T) {
 	err := service.AddCollectionExtra("GET", "statistics", func(Context) error { return nil })
 	if !errors.Is(err, ErrCollectionExtraOnSingleton) {
 		t.Fatalf("expected ErrCollectionExtraOnSingleton, got %v", err)
+	}
+}
+
+func TestAddExtraRejectsDuplicates(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+
+	service.MustAddElementExtra("GET", "publish", func(Context) error { return nil })
+	if err := service.AddElementExtra("get", "publish", func(Context) error { return nil }); !errors.Is(err, ErrConflictingExtraEndpoint) {
+		t.Fatalf("expected ErrConflictingExtraEndpoint, got %v", err)
+	}
+
+	service.MustAddCollectionExtra("POST", "search", func(Context) error { return nil })
+	if err := service.AddCollectionExtra("post", "search", func(Context) error { return nil }); !errors.Is(err, ErrConflictingExtraEndpoint) {
+		t.Fatalf("expected ErrConflictingExtraEndpoint, got %v", err)
 	}
 }
 
@@ -204,6 +244,39 @@ func TestAddExtraRejectsInvalidConfiguration(t *testing.T) {
 	}
 	if err := service.AddElementExtra("GET", "publish", nil); !errors.Is(err, ErrInvalidExtraEndpointHandler) {
 		t.Fatalf("expected ErrInvalidExtraEndpointHandler, got %v", err)
+	}
+	if err := service.AddCollectionExtra("OPTIONS", "search", func(Context) error { return nil }); !errors.Is(err, ErrInvalidExtraEndpointMethod) {
+		t.Fatalf("expected ErrInvalidExtraEndpointMethod, got %v", err)
+	}
+	if err := service.AddCollectionExtra("GET", "not valid", func(Context) error { return nil }); !errors.Is(err, utils.ErrInvalidPrefix) {
+		t.Fatalf("expected ErrInvalidPrefix, got %v", err)
+	}
+	if err := service.AddCollectionExtra("GET", "search", nil); !errors.Is(err, ErrInvalidExtraEndpointHandler) {
+		t.Fatalf("expected ErrInvalidExtraEndpointHandler, got %v", err)
+	}
+}
+
+func TestExtraAccessorsReturnCopies(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+	service.MustAddElementExtra("GET", "publish", func(Context) error { return nil })
+	service.MustAddCollectionExtra("GET", "search", func(Context) error { return nil })
+
+	elements := service.ElementExtras()
+	elements[0].Name = "changed"
+	collections := service.CollectionExtras()
+	collections[0].Name = "changed"
+
+	if service.ElementExtras()[0].Name != "publish" {
+		t.Fatalf("element extras accessor exposed internal slice: %#v", service.ElementExtras())
+	}
+	if service.CollectionExtras()[0].Name != "search" {
+		t.Fatalf("collection extras accessor exposed internal slice: %#v", service.CollectionExtras())
 	}
 }
 

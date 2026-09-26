@@ -146,6 +146,23 @@ install at `/{prefix}/{id}/{name}` for collections and `/{prefix}/{name}` for
 singletons; they use live element middleware and cannot share a name with a
 child resource.
 
+Custom endpoint handlers receive endpoint metadata through `CurrentEndpoint()`.
+For custom endpoints, inspect the returned `EndpointType` and custom name; the
+`ResourceVerb` value is not meaningful.
+
+```go
+stores.MustAddElementExtra("GET", "summary", func(context services.Context) error {
+	elementRaw, _ := context.PeekElement(0)
+	store := elementRaw.(*Store)
+
+	return stores.RenderElement(context, 200, store)
+})
+
+stores.MustAddCollectionExtra("POST", "search", func(context services.Context) error {
+	return context.RenderJSON(200, map[string]any{"ok": true})
+})
+```
+
 Tree methods:
 
 - `AttachTo(parent Service, constraintJSONField string) error`

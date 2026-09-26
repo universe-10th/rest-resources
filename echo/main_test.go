@@ -258,6 +258,86 @@ func TestInstallElementExtra(t *testing.T) {
 	}
 }
 
+func TestInstallSingletonElementExtra(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	storage := memory.NewStorage[int, *integrationSetting]()
+	service := services.MustCreateSingletonService[int, *integrationSetting]("platform", storage)
+	service.MustAddElementExtra("GET", "statistics", func(context services.Context) error {
+		endpointType, _, name := context.CurrentEndpoint()
+		elementRaw, ok := context.PeekElement(0)
+		if !ok {
+			return context.RenderJSON(http.StatusInternalServerError, map[string]any{"error": "missing element"})
+		}
+		element := elementRaw.(*integrationSetting)
+		return context.RenderJSON(http.StatusOK, map[string]any{
+			"endpoint": endpointType,
+			"name":     name,
+			"version":  element.Version,
+		})
+	})
+
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	createResponse := performJSONRequest(t, app, http.MethodPost, "/platform", map[string]any{"version": "2026.9"})
+	requireStatus(t, createResponse, http.StatusCreated)
+
+	extraResponse := performJSONRequest(t, app, http.MethodGet, "/platform/statistics", nil)
+	requireStatus(t, extraResponse, http.StatusOK)
+	if body := extraResponse.Body.String(); !containsAll(body, `"endpoint":2`, `"name":"statistics"`, `"version":"2026.9"`) {
+		t.Fatalf("unexpected singleton extra response body: %s", body)
+	}
+}
+
+func TestInstallElementExtraUsesLiveResourceElement(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	storage := memory.NewStorage[int, *integrationStore]()
+	service := services.MustCreateCollectionService[int, *integrationStore]("stores", "store_id", storage)
+	service.MustAddElementExtra("GET", "summary", func(context services.Context) error {
+		elementRaw, ok := context.PeekElement(0)
+		if !ok {
+			return context.RenderJSON(http.StatusInternalServerError, map[string]any{"error": "missing element"})
+		}
+		element := elementRaw.(*integrationStore)
+		return service.RenderElement(context, http.StatusOK, element)
+	})
+	service.UsingElementRenderer(func(context services.Context, store *integrationStore) error {
+		endpointType, _, name := context.CurrentEndpoint()
+		return context.RenderJSON(http.StatusOK, map[string]any{
+			"endpoint": endpointType,
+			"name":     name,
+			"id":       store.ID,
+			"store":    store.Name,
+		})
+	})
+
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	createResponse := performJSONRequest(t, app, http.MethodPost, "/stores", map[string]any{"name": "Main"})
+	requireStatus(t, createResponse, http.StatusOK)
+	var createdStore integrationStore
+	decodeJSON(t, createResponse, &createdStore)
+
+	extraResponse := performJSONRequest(t, app, http.MethodGet, "/stores/"+strconv.Itoa(createdStore.ID)+"/summary", nil)
+	requireStatus(t, extraResponse, http.StatusOK)
+	if body := extraResponse.Body.String(); !containsAll(body, `"endpoint":2`, `"name":"summary"`, `"store":"Main"`) {
+		t.Fatalf("unexpected element extra response body: %s", body)
+	}
+
+	deleteResponse := performJSONRequest(t, app, http.MethodDelete, "/stores/"+strconv.Itoa(createdStore.ID), nil)
+	requireStatus(t, deleteResponse, http.StatusNoContent)
+
+	deletedExtraResponse := performJSONRequest(t, app, http.MethodGet, "/stores/"+strconv.Itoa(createdStore.ID)+"/summary", nil)
+	requireStatus(t, deletedExtraResponse, http.StatusNotFound)
+}
+
 func TestInstallAcceptsEchoGroup(t *testing.T) {
 	t.Parallel()
 
