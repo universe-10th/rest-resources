@@ -28,6 +28,20 @@ type testService struct {
 	middlewares []services.MiddlewareFunc
 }
 
+type panicParentService struct {
+	*testService
+}
+
+func (service panicParentService) Parent() services.Service {
+	panic("boom")
+}
+
+type fakeGroupProvider struct{}
+
+func (fakeGroupProvider) Group(string, ...echov4.MiddlewareFunc) *echov4.Group {
+	panic("unexpected Group")
+}
+
 func (service *testService) Prefix() string                            { return service.prefix }
 func (service *testService) URLArg() string                            { return service.urlArg }
 func (service *testService) IsSingleton() bool                         { return service.singleton }
@@ -101,6 +115,167 @@ func TestInstallRejectsInvalidRootInputs(t *testing.T) {
 	child := &testService{prefix: "children", parent: parent}
 	if err := Install(app, child); !errors.Is(err, ErrInvalidRootService) {
 		t.Fatalf("expected ErrInvalidRootService, got %v", err)
+	}
+}
+
+func TestMustInstallPanicsForInvalidRootInputs(t *testing.T) {
+	t.Parallel()
+
+	requirePanic(t, ErrInvalidEchoApp, func() {
+		MustInstall(nil, &testService{})
+	})
+	requirePanic(t, ErrInvalidService, func() {
+		MustInstall(echov4.New(), nil)
+	})
+	parent := &testService{prefix: "parents"}
+	child := &testService{prefix: "children", parent: parent}
+	requirePanic(t, ErrInvalidRootService, func() {
+		MustInstall(echov4.New(), child)
+	})
+}
+
+func TestInstallRethrowsNonErrorPanics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		value := recover()
+		if value != "boom" {
+			t.Fatalf("expected boom panic, got %#v", value)
+		}
+	}()
+	_ = Install(echov4.New(), panicParentService{testService: &testService{prefix: "items"}})
+}
+
+func TestIsNilGroupProviderWithValueProvider(t *testing.T) {
+	t.Parallel()
+
+	if isNilGroupProvider(fakeGroupProvider{}) {
+		t.Fatal("expected value group provider not to be nil")
+	}
+}
+
+func TestContextRequestAndResponseHelpers(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	service := &testService{
+		prefix: "items",
+		urlArg: "item_id",
+		verbs:  utils.NewFlags(services.ResourceList),
+		collections: []services.ExtraEndpoint{{
+			Method: http.MethodPost,
+			Name:   "inspect",
+			Handler: func(context services.Context) error {
+				var body struct {
+					Name string `json:"name"`
+				}
+				if err := context.BindJSON(&body); err != nil {
+					return err
+				}
+				firstTag, _ := context.GetQueryParam("tag")
+				allTags, _ := context.GetQueryParams("tag")
+				header, _ := context.GetHeader("X-Test")
+				headers, _ := context.GetHeaders("X-Test")
+				cookie, _ := context.GetCookie("session")
+				_, missingPathErr := context.GetPathParam("missing")
+				_, missingQueryErr := context.GetQueryParam("missing")
+				_, missingQueriesErr := context.GetQueryParams("missing")
+				_, missingHeaderErr := context.GetHeader("missing")
+				_, missingHeadersErr := context.GetHeaders("missing")
+				_, missingCookieErr := context.GetCookie("missing")
+				_, popOK := context.PopElement()
+
+				context.SetHeader("X-Result", "ok")
+				context.SetCookie(services.Cookie{
+					Name:     "seen",
+					Value:    "yes",
+					Path:     "/",
+					SameSite: services.CookieSameSiteStrict,
+				})
+				return context.RenderJSON(http.StatusOK, map[string]any{
+					"name":            body.Name,
+					"first_tag":       firstTag,
+					"tag_count":       len(allTags),
+					"header":          header,
+					"header_count":    len(headers),
+					"cookie":          cookie.Value,
+					"cookie_samesite": cookie.SameSite,
+					"missing_path":    missingPathErr == nil,
+					"missing_query":   missingQueryErr == nil,
+					"missing_queries": missingQueriesErr == nil,
+					"missing_header":  missingHeaderErr == nil,
+					"missing_headers": missingHeadersErr == nil,
+					"missing_cookie":  missingCookieErr == nil,
+					"pop":             popOK,
+					"native":          context.Native() != nil,
+				})
+			},
+		}},
+	}
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	response := performJSONRequestWithHeaders(t, app, http.MethodPost, "/items/inspect?tag=a&tag=b", map[string]any{"name": "Main"}, map[string]string{
+		"X-Test": "one",
+		"Cookie": "session=abc",
+	})
+	requireStatus(t, response, http.StatusOK)
+	if response.Header().Get("X-Result") != "ok" {
+		t.Fatalf("expected X-Result header, got %q", response.Header().Get("X-Result"))
+	}
+	if cookie := response.Header().Get("Set-Cookie"); !containsAll(cookie, "seen=yes", "SameSite=Strict") {
+		t.Fatalf("expected Set-Cookie header, got %q", cookie)
+	}
+	if body := response.Body.String(); !containsAll(
+		body,
+		`"name":"Main"`,
+		`"first_tag":"a"`,
+		`"tag_count":2`,
+		`"header":"one"`,
+		`"header_count":1`,
+		`"cookie":"abc"`,
+		`"cookie_samesite":0`,
+		`"missing_path":false`,
+		`"missing_query":false`,
+		`"missing_queries":false`,
+		`"missing_header":false`,
+		`"missing_headers":false`,
+		`"missing_cookie":false`,
+		`"pop":false`,
+		`"native":true`,
+	) {
+		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestSameSiteMapping(t *testing.T) {
+	t.Parallel()
+
+	if fromHTTPSameSite(http.SameSiteLaxMode) != services.CookieSameSiteLax {
+		t.Fatal("expected Lax same-site mapping from HTTP")
+	}
+	if fromHTTPSameSite(http.SameSiteStrictMode) != services.CookieSameSiteStrict {
+		t.Fatal("expected Strict same-site mapping from HTTP")
+	}
+	if fromHTTPSameSite(http.SameSiteNoneMode) != services.CookieSameSiteNone {
+		t.Fatal("expected None same-site mapping from HTTP")
+	}
+	if fromHTTPSameSite(http.SameSiteDefaultMode) != services.CookieSameSiteDefault {
+		t.Fatal("expected Default same-site mapping from HTTP")
+	}
+
+	if toHTTPSameSite(services.CookieSameSiteLax) != http.SameSiteLaxMode {
+		t.Fatal("expected Lax same-site mapping to HTTP")
+	}
+	if toHTTPSameSite(services.CookieSameSiteStrict) != http.SameSiteStrictMode {
+		t.Fatal("expected Strict same-site mapping to HTTP")
+	}
+	if toHTTPSameSite(services.CookieSameSiteNone) != http.SameSiteNoneMode {
+		t.Fatal("expected None same-site mapping to HTTP")
+	}
+	if toHTTPSameSite(services.CookieSameSiteDefault) != http.SameSiteDefaultMode {
+		t.Fatal("expected Default same-site mapping to HTTP")
 	}
 }
 
@@ -292,6 +467,24 @@ func TestInstallSingletonElementExtra(t *testing.T) {
 	}
 }
 
+func TestInstallSoftDeletedSingletonRoutes(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	service := services.MustCreateSingletonService[int, *integrationSoftSetting]("platform", memory.NewStorage[int, *integrationSoftSetting]())
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	requireStatus(t, performJSONRequest(t, app, http.MethodPost, "/platform", map[string]any{"version": "2026.9"}), http.StatusCreated)
+	requireStatus(t, performJSONRequest(t, app, http.MethodDelete, "/platform", nil), http.StatusNoContent)
+	requireStatus(t, performJSONRequest(t, app, http.MethodGet, "/platform/deleted", nil), http.StatusOK)
+	requireStatus(t, performJSONRequest(t, app, http.MethodPost, "/platform/deleted", nil), http.StatusOK)
+	requireStatus(t, performJSONRequest(t, app, http.MethodDelete, "/platform", nil), http.StatusNoContent)
+	requireStatus(t, performJSONRequest(t, app, http.MethodDelete, "/platform/deleted", nil), http.StatusNoContent)
+	requireStatus(t, performJSONRequest(t, app, http.MethodGet, "/platform/deleted", nil), http.StatusNotFound)
+}
+
 func TestInstallElementExtraUsesLiveResourceElement(t *testing.T) {
 	t.Parallel()
 
@@ -388,6 +581,11 @@ type integrationProduct struct {
 
 type integrationSetting struct {
 	memory.Resource[int]
+	Version string `json:"version"`
+}
+
+type integrationSoftSetting struct {
+	memory.SoftDeletedResource[int]
 	Version string `json:"version"`
 }
 
@@ -935,6 +1133,11 @@ func contains(value string, fragment string) bool {
 
 func performJSONRequest(t *testing.T, app *echov4.Echo, method string, target string, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	return performJSONRequestWithHeaders(t, app, method, target, body, nil)
+}
+
+func performJSONRequestWithHeaders(t *testing.T, app *echov4.Echo, method string, target string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 
 	var requestBody *bytes.Reader
 	if body == nil {
@@ -950,6 +1153,9 @@ func performJSONRequest(t *testing.T, app *echov4.Echo, method string, target st
 	request := httptest.NewRequest(method, target, requestBody)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		request.Header.Add(name, value)
 	}
 	response := httptest.NewRecorder()
 	app.ServeHTTP(response, request)
@@ -988,4 +1194,19 @@ func decodeJSON(t *testing.T, response *httptest.ResponseRecorder, target any) {
 	if err := json.Unmarshal(response.Body.Bytes(), target); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v; response status=%d body=%s", err, response.Code, response.Body.String())
 	}
+}
+
+func requirePanic(t *testing.T, expected error, fn func()) {
+	t.Helper()
+	defer func() {
+		value := recover()
+		if value == nil {
+			t.Fatalf("expected panic %v", expected)
+		}
+		err, ok := value.(error)
+		if !ok || !errors.Is(err, expected) {
+			t.Fatalf("expected panic %v, got %#v", expected, value)
+		}
+	}()
+	fn()
 }

@@ -104,8 +104,8 @@ type HandlerFunc func(Context) error
 type MiddlewareFunc func(next HandlerFunc) HandlerFunc
 ```
 
-Middleware is framework-neutral. The Echo adapter wraps it into Echo middleware
-when installing routes.
+Middleware is framework-neutral. HTTP adapters wrap it into the target
+framework's middleware or handler chain when installing routes.
 
 Service middleware runs after endpoint setup middleware. Element routes also run
 the element middleware that loads the current resource and pushes it onto the
