@@ -89,6 +89,7 @@ metadata, children, middleware, and endpoint handlers:
 - metadata: `Prefix`, `URLArg`, `IsSingleton`, `IsSoftDeleted`, `Verbs`,
   `CanHaveChildren`
 - tree: `Children`, `Parent`
+- custom endpoints: `CollectionExtras`, `ElementExtras`
 - middleware: `Middlewares`, `ElementMiddleware`
 - endpoints: `List`, `Create`, `Get`, `Update`, `Delete`, `Prune`, `Restore`
 
@@ -114,6 +115,8 @@ Read-only accessors:
 - `PageRenderer() PageRendererFunc[IDT, RT]`
 - `PageSize() int64`
 - `Children() []Service`
+- `CollectionExtras() []ExtraEndpoint`
+- `ElementExtras() []ExtraEndpoint`
 - `Parent() Service`
 
 Builder-style configuration:
@@ -129,6 +132,20 @@ Builder-style configuration:
 - `UsingPageRenderer(PageRendererFunc[IDT, RT])`
 - `UsingPageSize(int64)`
 
+Custom endpoint configuration:
+
+- `AddCollectionExtra(method, name string, handler HandlerFunc) error`
+- `MustAddCollectionExtra(method, name string, handler HandlerFunc)`
+- `AddElementExtra(method, name string, handler HandlerFunc) error`
+- `MustAddElementExtra(method, name string, handler HandlerFunc)`
+
+Custom endpoints support `GET`, `PUT`, `PATCH`, `POST`, and `DELETE`. Names use
+the same validation as resource prefixes. Collection extras install at
+`/{prefix}/{name}` and are rejected for singleton resources. Element extras
+install at `/{prefix}/{id}/{name}` for collections and `/{prefix}/{name}` for
+singletons; they use live element middleware and cannot share a name with a
+child resource.
+
 Tree methods:
 
 - `AttachTo(parent Service, constraintJSONField string) error`
@@ -142,6 +159,10 @@ Attachment errors:
 - `ErrConflictingServiceURLArg`
 - `ErrInvalidConstraintJSONField`
 - `ErrInvalidConstraintIDType`
+- `ErrInvalidExtraEndpointMethod`
+- `ErrInvalidExtraEndpointHandler`
+- `ErrConflictingExtraEndpoint`
+- `ErrCollectionExtraOnSingleton`
 
 Endpoint methods are public so adapters can invoke them:
 

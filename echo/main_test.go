@@ -23,6 +23,8 @@ type testService struct {
 	verbs       utils.Flags[services.ResourceVerb]
 	parent      services.Service
 	children    []services.Service
+	collections []services.ExtraEndpoint
+	elements    []services.ExtraEndpoint
 	middlewares []services.MiddlewareFunc
 }
 
@@ -33,7 +35,11 @@ func (service *testService) Verbs() utils.Flags[services.ResourceVerb] { return 
 func (service *testService) CanHaveChildren() bool                     { return service.Verbs().Has(services.ResourceGet) }
 func (service *testService) IsSoftDeleted() bool                       { return service.softDeleted }
 func (service *testService) Children() []services.Service              { return service.children }
-func (service *testService) Parent() services.Service                  { return service.parent }
+func (service *testService) CollectionExtras() []services.ExtraEndpoint {
+	return service.collections
+}
+func (service *testService) ElementExtras() []services.ExtraEndpoint { return service.elements }
+func (service *testService) Parent() services.Service                { return service.parent }
 func (service *testService) Middlewares() []services.MiddlewareFunc {
 	return service.middlewares
 }
@@ -154,6 +160,100 @@ func TestInstallWrapsElementMiddleware(t *testing.T) {
 		t.Fatalf("expected status 200, got %d with body %s", response.Code, response.Body.String())
 	}
 	if body := response.Body.String(); body == "" || !containsAll(body, `"element":true`) {
+		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestInstallCollectionExtra(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	service := &testService{
+		prefix: "items",
+		urlArg: "item_id",
+		verbs:  utils.NewFlags(services.ResourceGet, services.ResourceList),
+		collections: []services.ExtraEndpoint{
+			{
+				Method: http.MethodGet,
+				Name:   "search",
+				Handler: func(context services.Context) error {
+					endpointType, verb, name := context.CurrentEndpoint()
+					_, hasElement := context.PeekElement(0)
+					return context.RenderJSON(http.StatusAccepted, map[string]any{
+						"endpoint": endpointType,
+						"verb":     verb,
+						"name":     name,
+						"element":  hasElement,
+					})
+				},
+			},
+		},
+	}
+
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/items/search", nil)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d with body %s", response.Code, response.Body.String())
+	}
+	if body := response.Body.String(); body == "" || !containsAll(body, `"endpoint":1`, `"verb":0`, `"name":"search"`, `"element":false`) {
+		t.Fatalf("unexpected response body: %s", body)
+	}
+}
+
+func TestInstallElementExtra(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	service := &testService{
+		prefix: "items",
+		urlArg: "item_id",
+		verbs:  utils.NewFlags(services.ResourceList),
+		elements: []services.ExtraEndpoint{
+			{
+				Method: http.MethodPut,
+				Name:   "publish",
+				Handler: func(context services.Context) error {
+					endpointType, verb, name := context.CurrentEndpoint()
+					_, hasElement := context.PeekElement(0)
+					middlewareValue, _ := context.GetData("middleware")
+					return context.RenderJSON(http.StatusOK, map[string]any{
+						"endpoint":   endpointType,
+						"verb":       verb,
+						"name":       name,
+						"element":    hasElement,
+						"middleware": middlewareValue,
+					})
+				},
+			},
+		},
+		middlewares: []services.MiddlewareFunc{
+			func(next services.HandlerFunc) services.HandlerFunc {
+				return func(context services.Context) error {
+					context.SetData("middleware", "seen")
+					return next(context)
+				}
+			},
+		},
+	}
+
+	if err := Install(app, service); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/items/42/publish", nil)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d with body %s", response.Code, response.Body.String())
+	}
+	if body := response.Body.String(); body == "" || !containsAll(body, `"endpoint":2`, `"verb":0`, `"name":"publish"`, `"element":true`, `"middleware":"seen"`) {
 		t.Fatalf("unexpected response body: %s", body)
 	}
 }

@@ -38,6 +38,10 @@ var (
 	ErrConflictingServiceURLArg    = errors.New("conflicting service URL arg")
 	ErrInvalidConstraintJSONField  = errors.New("invalid constraint JSON field")
 	ErrInvalidConstraintIDType     = errors.New("invalid constraint id type")
+	ErrInvalidExtraEndpointMethod  = errors.New("invalid extra endpoint method")
+	ErrInvalidExtraEndpointHandler = errors.New("invalid extra endpoint handler")
+	ErrConflictingExtraEndpoint    = errors.New("conflicting extra endpoint")
+	ErrCollectionExtraOnSingleton  = errors.New("collection extra endpoint on singleton")
 	logger                         = slog.Default()
 	defaultCollectionResourceVerbs = utils.NewFlags[ResourceVerb](
 		ResourceGet, ResourceList,
@@ -248,6 +252,14 @@ type Service interface {
 	// Children tells the services that are children of this service.
 	Children() []Service
 
+	// CollectionExtras tells the custom collection-wide endpoints
+	// registered for this service.
+	CollectionExtras() []ExtraEndpoint
+
+	// ElementExtras tells the custom element-wide endpoints registered
+	// for this service.
+	ElementExtras() []ExtraEndpoint
+
 	// Parent tells the parent of the current service.
 	Parent() Service
 
@@ -352,6 +364,14 @@ type ResourceService[IDT comparable, RT types.Resource[IDT]] struct {
 	// The childrenServices is a slice of registered children.
 	childrenServices []Service
 
+	// The collectionExtras field keeps custom routes installed
+	// directly below the resource collection path.
+	collectionExtras []ExtraEndpoint
+
+	// The elementExtras field keeps custom routes installed below
+	// the live element path.
+	elementExtras []ExtraEndpoint
+
 	// The verbs field tells which verbs will be considered for
 	// the resource.
 	verbs utils.Flags[ResourceVerb]
@@ -431,10 +451,140 @@ func (service ResourceService[IDT, RT]) URLArg() string {
 // to always force.
 func (service *ResourceService[IDT, RT]) UsingVerbs(verbs ...ResourceVerb) *ResourceService[IDT, RT] {
 	service.verbs = utils.NewFlags[ResourceVerb](verbs...)
-	if len(service.childrenServices) > 0 {
+	if len(service.childrenServices) > 0 || len(service.elementExtras) > 0 {
 		service.verbs.Add(ResourceGet)
 	}
 	return service
+}
+
+func normalizeExtraEndpointMethod(method string) string {
+	return strings.ToUpper(method)
+}
+
+func isValidExtraEndpointMethod(method string) bool {
+	switch normalizeExtraEndpointMethod(method) {
+	case "GET", "PUT", "PATCH", "POST", "DELETE":
+		return true
+	default:
+		return false
+	}
+}
+
+func sameExtraEndpoint(left ExtraEndpoint, right ExtraEndpoint) bool {
+	return normalizeExtraEndpointMethod(left.Method) == normalizeExtraEndpointMethod(right.Method) &&
+		left.Name == right.Name
+}
+
+func hasExtraEndpointName(endpoints []ExtraEndpoint, name string) bool {
+	for _, endpoint := range endpoints {
+		if endpoint.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func validateExtraEndpoint(method string, name string, handler HandlerFunc) ExtraEndpoint {
+	if err := utils.CheckPrefix(name); err != nil {
+		panic(err)
+	}
+	if !isValidExtraEndpointMethod(method) {
+		panic(ErrInvalidExtraEndpointMethod)
+	}
+	if handler == nil {
+		panic(ErrInvalidExtraEndpointHandler)
+	}
+	return ExtraEndpoint{
+		Method:  normalizeExtraEndpointMethod(method),
+		Name:    name,
+		Handler: handler,
+	}
+}
+
+// MustAddCollectionExtra registers a collection-wide custom endpoint.
+func (service *ResourceService[IDT, RT]) MustAddCollectionExtra(
+	method string,
+	name string,
+	handler HandlerFunc,
+) *ResourceService[IDT, RT] {
+	if service.singleton {
+		panic(ErrCollectionExtraOnSingleton)
+	}
+
+	endpoint := validateExtraEndpoint(method, name, handler)
+	for _, registered := range service.collectionExtras {
+		if sameExtraEndpoint(registered, endpoint) {
+			panic(ErrConflictingExtraEndpoint)
+		}
+	}
+
+	service.collectionExtras = append(service.collectionExtras, endpoint)
+	return service
+}
+
+// AddCollectionExtra registers a collection-wide custom endpoint.
+func (service *ResourceService[IDT, RT]) AddCollectionExtra(
+	method string,
+	name string,
+	handler HandlerFunc,
+) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			if err2, ok := v.(error); ok {
+				err = err2
+			} else {
+				panic(v)
+			}
+		}
+	}()
+
+	service.MustAddCollectionExtra(method, name, handler)
+	return nil
+}
+
+// MustAddElementExtra registers an element-wide custom endpoint.
+func (service *ResourceService[IDT, RT]) MustAddElementExtra(
+	method string,
+	name string,
+	handler HandlerFunc,
+) *ResourceService[IDT, RT] {
+	endpoint := validateExtraEndpoint(method, name, handler)
+	for _, registered := range service.elementExtras {
+		if sameExtraEndpoint(registered, endpoint) {
+			panic(ErrConflictingExtraEndpoint)
+		}
+	}
+	for _, child := range service.childrenServices {
+		if child.Prefix() == name {
+			panic(ErrConflictingExtraEndpoint)
+		}
+	}
+
+	service.elementExtras = append(service.elementExtras, endpoint)
+	if service.verbs != utils.Flags[ResourceVerb](0) {
+		service.verbs.Add(ResourceGet)
+	}
+	return service
+}
+
+// AddElementExtra registers an element-wide custom endpoint.
+func (service *ResourceService[IDT, RT]) AddElementExtra(
+	method string,
+	name string,
+	handler HandlerFunc,
+) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			if err2, ok := v.(error); ok {
+				err = err2
+			} else {
+				panic(v)
+			}
+		}
+	}()
+
+	service.MustAddElementExtra(method, name, handler)
+	return nil
 }
 
 // Verbs returns the flag of verbs to use. Children classes
@@ -673,6 +823,9 @@ func (service *ResourceService[IDT, RT]) addChild(child Service) {
 			return
 		}
 	}
+	if hasExtraEndpointName(service.elementExtras, child.Prefix()) {
+		panic(ErrConflictingExtraEndpoint)
+	}
 
 	service.childrenServices = append(service.childrenServices, child)
 }
@@ -693,6 +846,8 @@ func (service *ResourceService[IDT, RT]) resourceMapping() *types.FieldsMapping 
 //     the current service is in the path (causing a cycle), or
 //     the current service is a Collection and also the URL Arg
 //     of the current service is found while traversing.
+//   - The current service prefix conflicts with an element extra
+//     endpoint already registered in the parent service.
 func (service *ResourceService[IDT, RT]) MustAttachTo(s Service, constraintJSONField string) {
 	if s == nil || !s.CanHaveChildren() {
 		panic(ErrInvalidParentService)
@@ -735,6 +890,9 @@ func (service *ResourceService[IDT, RT]) MustAttachTo(s Service, constraintJSONF
 
 		service.constraintJSONField = constraintJSONField
 	}
+	if hasExtraEndpointName(s.ElementExtras(), service.Prefix()) {
+		panic(ErrConflictingExtraEndpoint)
+	}
 	service.parentService = s
 	if appender, ok := s.(childAppender); ok {
 		appender.addChild(service)
@@ -767,6 +925,26 @@ func (service ResourceService[IDT, RT]) Children() []Service {
 	copy_ := make([]Service, len(service.childrenServices))
 	copy(copy_, service.childrenServices)
 	return copy_
+}
+
+// CollectionExtras returns the collection-wide custom endpoints.
+func (service ResourceService[IDT, RT]) CollectionExtras() []ExtraEndpoint {
+	if service.collectionExtras == nil {
+		return nil
+	}
+	extras := make([]ExtraEndpoint, len(service.collectionExtras))
+	copy(extras, service.collectionExtras)
+	return extras
+}
+
+// ElementExtras returns the element-wide custom endpoints.
+func (service ResourceService[IDT, RT]) ElementExtras() []ExtraEndpoint {
+	if service.elementExtras == nil {
+		return nil
+	}
+	extras := make([]ExtraEndpoint, len(service.elementExtras))
+	copy(extras, service.elementExtras)
+	return extras
 }
 
 // Parent returns the registered parent of this service.

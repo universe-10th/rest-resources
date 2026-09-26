@@ -303,6 +303,7 @@ func installSingleton(group *echov4.Group, service services.Service, verbs utils
 		installDeletedSingleton(group, service, verbs)
 	}
 
+	installElementExtras(group, "", service)
 	installChildren(liveElementGroup, service)
 }
 
@@ -330,6 +331,8 @@ func installCollection(group *echov4.Group, service services.Service, verbs util
 		installDeletedCollection(group, service, verbs)
 	}
 
+	installCollectionExtras(group, service)
+	installElementExtras(group, liveElementPath, service)
 	installChildren(liveElementGroup, service)
 }
 
@@ -375,6 +378,33 @@ func installChildren(base *echov4.Group, service services.Service) {
 	}
 }
 
+func installCollectionExtras(group *echov4.Group, service services.Service) {
+	for _, endpoint := range service.CollectionExtras() {
+		group.Add(
+			endpoint.Method,
+			"/"+endpoint.Name,
+			wrapHandler(endpoint.Handler),
+			extraEndpointMiddlewares(service, services.EndpointCollectionExtra, endpoint.Name)...,
+		)
+	}
+}
+
+func installElementExtras(group *echov4.Group, elementPath string, service services.Service) {
+	for _, endpoint := range service.ElementExtras() {
+		group.Add(
+			endpoint.Method,
+			elementPath+"/"+endpoint.Name,
+			wrapHandler(endpoint.Handler),
+			extraEndpointMiddlewares(
+				service,
+				services.EndpointElementExtra,
+				endpoint.Name,
+				service.ElementMiddleware(false),
+			)...,
+		)
+	}
+}
+
 func endpointMiddlewares(
 	service services.Service,
 	verb services.ResourceVerb,
@@ -383,6 +413,26 @@ func endpointMiddlewares(
 	middlewares := []services.MiddlewareFunc{
 		setupMiddleware(service, services.EndpointVerb, verb, ""),
 	}
+	return wrapEndpointMiddlewares(middlewares, service, extra...)
+}
+
+func extraEndpointMiddlewares(
+	service services.Service,
+	endpointType services.EndpointType,
+	name string,
+	extra ...services.MiddlewareFunc,
+) []echov4.MiddlewareFunc {
+	middlewares := []services.MiddlewareFunc{
+		setupMiddleware(service, endpointType, 0, name),
+	}
+	return wrapEndpointMiddlewares(middlewares, service, extra...)
+}
+
+func wrapEndpointMiddlewares(
+	middlewares []services.MiddlewareFunc,
+	service services.Service,
+	extra ...services.MiddlewareFunc,
+) []echov4.MiddlewareFunc {
 	middlewares = append(middlewares, service.Middlewares()...)
 	middlewares = append(middlewares, extra...)
 

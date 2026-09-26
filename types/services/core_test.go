@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/universe-10th/rest-resources/types"
+	"github.com/universe-10th/rest-resources/utils"
 )
 
 type coreConstraintResource struct {
@@ -144,6 +145,112 @@ func TestMustAttachToLinksParentAndChild(t *testing.T) {
 	children := parent.Children()
 	if len(children) != 1 || children[0] != &child {
 		t.Fatalf("expected parent to have child registered, got %#v", children)
+	}
+}
+
+func TestAddElementExtraRegistersAndForcesGetForExplicitVerbs(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+	service.UsingVerbs(ResourceList)
+
+	err := service.AddElementExtra("post", "publish", func(Context) error { return nil })
+	if err != nil {
+		t.Fatalf("AddElementExtra returned error: %v", err)
+	}
+
+	extras := service.ElementExtras()
+	if len(extras) != 1 || extras[0].Method != "POST" || extras[0].Name != "publish" {
+		t.Fatalf("unexpected element extras: %#v", extras)
+	}
+	if !service.Verbs().Has(ResourceGet) {
+		t.Fatal("expected ResourceGet to be forced for element extra")
+	}
+}
+
+func TestAddCollectionExtraRejectsSingleton(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:    "platform",
+		singleton: true,
+		storage:   newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+
+	err := service.AddCollectionExtra("GET", "statistics", func(Context) error { return nil })
+	if !errors.Is(err, ErrCollectionExtraOnSingleton) {
+		t.Fatalf("expected ErrCollectionExtraOnSingleton, got %v", err)
+	}
+}
+
+func TestAddExtraRejectsInvalidConfiguration(t *testing.T) {
+	t.Parallel()
+
+	service := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+
+	if err := service.AddElementExtra("TRACE", "publish", func(Context) error { return nil }); !errors.Is(err, ErrInvalidExtraEndpointMethod) {
+		t.Fatalf("expected ErrInvalidExtraEndpointMethod, got %v", err)
+	}
+	if err := service.AddElementExtra("GET", "not valid", func(Context) error { return nil }); !errors.Is(err, utils.ErrInvalidPrefix) {
+		t.Fatalf("expected ErrInvalidPrefix, got %v", err)
+	}
+	if err := service.AddElementExtra("GET", "publish", nil); !errors.Is(err, ErrInvalidExtraEndpointHandler) {
+		t.Fatalf("expected ErrInvalidExtraEndpointHandler, got %v", err)
+	}
+}
+
+func TestElementExtraConflictsWithChildPrefix(t *testing.T) {
+	t.Parallel()
+
+	parent := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+	child := ResourceService[int, coreConstraintResource]{
+		prefix:  "publish",
+		urlArg:  "child_id",
+		storage: newCoreConstraintStorage[int, coreConstraintResource](),
+	}
+
+	child.MustAttachTo(&parent, "parent_id")
+
+	err := parent.AddElementExtra("GET", "publish", func(Context) error { return nil })
+	if !errors.Is(err, ErrConflictingExtraEndpoint) {
+		t.Fatalf("expected ErrConflictingExtraEndpoint, got %v", err)
+	}
+}
+
+func TestChildPrefixConflictsWithElementExtra(t *testing.T) {
+	t.Parallel()
+
+	parent := ResourceService[int, coreConstraintParentResource]{
+		prefix:  "parents",
+		urlArg:  "parent_id",
+		storage: newCoreConstraintStorage[int, coreConstraintParentResource](),
+	}
+	parent.MustAddElementExtra("GET", "publish", func(Context) error { return nil })
+
+	child := ResourceService[int, coreConstraintResource]{
+		prefix:  "publish",
+		urlArg:  "child_id",
+		storage: newCoreConstraintStorage[int, coreConstraintResource](),
+	}
+
+	err := child.AttachTo(&parent, "parent_id")
+	if !errors.Is(err, ErrConflictingExtraEndpoint) {
+		t.Fatalf("expected ErrConflictingExtraEndpoint, got %v", err)
+	}
+	if child.Parent() != nil {
+		t.Fatal("expected failed attachment not to set parent")
 	}
 }
 

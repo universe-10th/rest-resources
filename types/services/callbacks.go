@@ -62,3 +62,10 @@ type HandlerFunc func(Context) error
 
 // MiddlewareFunc is the abstraction of a middleware in this context.
 type MiddlewareFunc func(next HandlerFunc) HandlerFunc
+
+// ExtraEndpoint describes a custom endpoint registered under a resource.
+type ExtraEndpoint struct {
+	Method  string
+	Name    string
+	Handler HandlerFunc
+}
