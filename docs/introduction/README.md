@@ -20,7 +20,8 @@ Many JSON APIs repeat the same code for every resource:
 
 This project turns those behaviors into typed services. A service knows its URL
 prefix, ID path parameter name, storage backend, supported verbs, callbacks, and
-children. The Echo adapter installs that service as concrete routes.
+children. HTTP adapters install that service as concrete routes for Echo, Fiber,
+Chi, or Encore raw endpoints.
 
 ## Design Goals
 
@@ -50,9 +51,9 @@ Services are created with `types/services` constructors:
 - `MustCreateSingletonService(prefix, storage)`
 - `CreateSingletonService(prefix, storage)`
 
-The Echo adapter installs only root services. Child services are attached to
-parents with `AttachTo` or `MustAttachTo`, then installed automatically under
-their parent element routes.
+HTTP adapters install only root services. Child services are attached to parents
+with `AttachTo` or `MustAttachTo`, then installed automatically under their
+parent element routes.
 
 ## Route Shape
 
@@ -120,5 +121,5 @@ Use this project when you have several CRUD-like JSON resources and want one
 consistent implementation for routing, query parsing, storage calls, and common
 callbacks.
 
-Use plain Echo handlers when an endpoint is highly custom, not resource-shaped,
-or should not follow the service conventions.
+Use plain framework handlers when an endpoint is highly custom, not
+resource-shaped, or should not follow the service conventions.

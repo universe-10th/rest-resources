@@ -92,7 +92,9 @@ Useful callbacks include:
 - `UsingMiddlewares` to run service-level middleware around every endpoint.
 - `UsingVerbs` to restrict which standard routes are installed.
 
-## 5. Install Into Echo
+## 5. Install Into A Router
+
+This example uses Echo:
 
 ```go
 import (
@@ -106,6 +108,20 @@ resourceecho.MustInstall(app, stores)
 
 You only install the root service. Attached child services are installed under
 their parent routes.
+
+The same service tree can be installed with another adapter:
+
+```go
+import (
+	resourcechi "github.com/universe-10th/rest-resources/chi"
+	resourceencore "github.com/universe-10th/rest-resources/encore"
+	resourcefiber "github.com/universe-10th/rest-resources/fiber"
+)
+
+resourcefiber.MustInstall(app, stores)
+resourcechi.MustInstall(router, stores)
+handler := resourceencore.MustNewHandler(stores)
+```
 
 Install into an Echo group when the API has a prefix or group middleware:
 

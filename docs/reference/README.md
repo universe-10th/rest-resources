@@ -7,7 +7,12 @@ need. See also:
 - [Storage adapters](storage.md)
 - [Filter and sort syntax](queries.md)
 
-## `echo`
+## HTTP Adapters
+
+All HTTP adapters install the same `types/services.Service` tree and expose a
+framework-specific `Context` wrapper implementing `services.Context`.
+
+### `echo`
 
 Import path:
 
@@ -50,6 +55,97 @@ Install errors:
 - request data: `GetData`, `SetData`
 - resource stack: `PushElement`, `PopElement`, `PeekElement`
 - endpoint metadata: `CurrentService`, `CurrentEndpoint`, `Setup`
+
+### `fiber`
+
+Import path:
+
+```go
+github.com/universe-10th/rest-resources/fiber
+```
+
+`MustInstall(app Router, service services.Service)` installs a root service into
+a `*fiber.App`, `fiber.Group`, or compatible `fiber.Router`.
+
+`Install(app Router, service services.Service) error` returns known validation
+errors instead of panicking.
+
+The adapter needs the subset of Fiber routing implemented by apps and groups:
+
+```go
+type Router interface {
+	Add(methods []string, path string, handler any, handlers ...any) fiber.Router
+	Group(prefix string, handlers ...any) fiber.Router
+}
+```
+
+Install errors:
+
+- `ErrInvalidFiberApp`: nil app or group.
+- `ErrInvalidService`: nil service.
+- `ErrInvalidRootService`: attempted to install a child service directly.
+
+`WrapContext(c fiber.Ctx) *Context` returns the framework-neutral wrapper for a
+Fiber request.
+
+### `chi`
+
+Import path:
+
+```go
+github.com/universe-10th/rest-resources/chi
+```
+
+`MustInstall(router chi.Router, service services.Service)` installs a root
+service into a Chi router.
+
+`Install(router chi.Router, service services.Service) error` returns known
+validation errors instead of panicking.
+
+Chi support accepts the standard `chi.Router` interface from
+`github.com/go-chi/chi/v5`.
+
+Install errors:
+
+- `ErrInvalidRouter`: nil router.
+- `ErrInvalidService`: nil service.
+- `ErrInvalidRootService`: attempted to install a child service directly.
+
+`WrapContext(w http.ResponseWriter, r *http.Request) *Context` returns the
+framework-neutral wrapper for a Chi request.
+
+### `encore`
+
+Import path:
+
+```go
+github.com/universe-10th/rest-resources/encore
+```
+
+Encore APIs are declared statically with `//encore:api` annotations, so this
+adapter returns a `net/http` handler intended for an Encore raw fallback
+endpoint:
+
+```go
+var resourceHandler = resourceencore.MustNewHandler(books)
+
+//encore:api public raw path=/!fallback
+func Resources(w http.ResponseWriter, req *http.Request) {
+	resourceHandler.ServeHTTP(w, req)
+}
+```
+
+`MustNewHandler(services ...services.Service) http.Handler` builds a handler
+for one or more root services. The handler uses the same routing behavior as the
+Chi adapter internally.
+
+`NewHandler(services ...services.Service) (http.Handler, error)` returns known
+validation errors instead of panicking.
+
+Install errors:
+
+- `ErrInvalidService`: nil service.
+- `ErrInvalidRootService`: attempted to install a child service directly.
 
 ## `types/services`
 

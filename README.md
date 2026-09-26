@@ -1,9 +1,9 @@
 # rest-resources
 
-`rest-resources` builds typed CRUD resource services for libraries like the
-[Echo](https://echo.labstack.com/) HTTP framework. You describe a resource, choose a storage adapter,
+`rest-resources` builds typed CRUD resource services for Go HTTP frameworks
+such as Echo, Fiber, Chi, and Encore raw endpoints. You describe a resource, choose a storage adapter,
 configure callbacks such as validation and rendering, and install the service
-into an Echo app or Echo group.
+into a supported router.
 
 The package focuses on APIs where collections, singleton resources, nested
 resources, filters, sort, pagination, hard deletes, and soft deletes all follow
@@ -19,7 +19,8 @@ the same conventions.
 ## Requirements
 
 - Go 1.25 or newer
-- Echo v4 (if using the Echo adapter)
+- Echo v4, Fiber v3, Chi v5, or Encore raw endpoints, depending on the adapter
+  you use
 
 The module uses Go toolchain support, so older compatible Go installations can
 download the required toolchain automatically when `GOTOOLCHAIN=auto` is enabled.
@@ -32,7 +33,8 @@ go get github.com/universe-10th/rest-resources
 
 ## Quick Start
 
-This is a quick start with `Echo`.
+This is a quick start with `Echo`. The same service can also be installed into
+Fiber, Chi, or an Encore raw endpoint handler.
 
 ```go
 package main
@@ -77,9 +79,26 @@ api := app.Group("/api")
 resourceecho.MustInstall(api, books)
 ```
 
+Other adapters:
+
+```go
+import (
+	resourcechi "github.com/universe-10th/rest-resources/chi"
+	resourceencore "github.com/universe-10th/rest-resources/encore"
+	resourcefiber "github.com/universe-10th/rest-resources/fiber"
+)
+
+resourcefiber.MustInstall(app, books)      // *fiber.App or fiber.Router
+resourcechi.MustInstall(router, books)     // chi.Router
+handler := resourceencore.MustNewHandler(books) // use from an Encore raw endpoint
+```
+
 ## Package Map
 
 - `echo`: Echo adapter, context wrapper, and service installer.
+- `fiber`: Fiber adapter, context wrapper, and service installer.
+- `chi`: Chi adapter, context wrapper, and service installer.
+- `encore`: `net/http` handler for Encore raw endpoints.
 - `types`: framework-neutral resource, storage, filter, sort, mapping, and error
   contracts.
 - `types/services`: resource service constructors, endpoint behavior,
