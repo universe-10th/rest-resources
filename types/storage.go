@@ -28,14 +28,14 @@ type Storage[IDT comparable, RT Resource[IDT]] interface {
 	// may cause a not-found error). If the element is logically
 	// deleted, this method does nothing and returns a not-found
 	// error as well.
-	Save(element *RT) (notFound bool, err error)
+	Save(element RT) (notFound bool, err error)
 
 	// Delete deletes an element. IF the ID is not set or does
 	// not belong to any element in database, it will return
 	// a not-found error. If the element is logically deleted,
 	// this method does nothing and returns a not-found error
 	// as well.
-	Delete(element *RT) (notFound bool, err error)
+	Delete(element RT) (notFound bool, err error)
 
 	// ValidateFilter performs a filter validation. This validation
 	// relates to the mapping returned in the Mapping method. Used
@@ -60,12 +60,12 @@ type Storage[IDT comparable, RT Resource[IDT]] interface {
 
 	// Restore undeleted a deleted element. If the element does not
 	// exist or is not logically deleted, returns a not-found error.
-	Restore(element *RT) (notFound bool, err error)
+	Restore(element RT) (notFound bool, err error)
 
 	// Prune definitely removes a deleted element. If the element
 	// does not exist or is not logically deleted, returns a not-found
 	// error.
-	Prune(element *RT) (notFound bool, err error)
+	Prune(element RT) (notFound bool, err error)
 
 	// AddDeletedFilter adds a criterion to look for deleted, or for
 	// not-deleted, elements. It extends the existing $and top-level

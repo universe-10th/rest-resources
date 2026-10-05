@@ -1412,7 +1412,7 @@ func (service ResourceService[IDT, RT]) Update(context Context) error {
 		return renderErrorOr(context, err, types.ValidationError{})
 	}
 
-	if notFound, err := service.storage.Save(&element); err != nil {
+	if notFound, err := service.storage.Save(element); err != nil {
 		return service.renderStorageError(context, err)
 	} else if notFound {
 		return service.renderNotFound(context, id)
@@ -1445,7 +1445,7 @@ func (service ResourceService[IDT, RT]) Create(context Context) error {
 		return renderErrorOr(context, err, types.ValidationError{})
 	}
 
-	if notFound, err := service.storage.Save(&element); err != nil {
+	if notFound, err := service.storage.Save(element); err != nil {
 		return service.renderStorageError(context, err)
 	} else if notFound {
 		return renderError(context, types.InternalError{})
@@ -1462,7 +1462,7 @@ func (service ResourceService[IDT, RT]) Delete(context Context) error {
 		return err
 	}
 
-	if notFound, err := service.storage.Delete(&element); err != nil {
+	if notFound, err := service.storage.Delete(element); err != nil {
 		return service.renderStorageError(context, err)
 	} else if notFound {
 		return service.renderNotFound(context, element.GetID())
@@ -1479,7 +1479,7 @@ func (service ResourceService[IDT, RT]) Prune(context Context) error {
 		return err
 	}
 
-	if notFound, err := service.storage.Prune(&element); err != nil {
+	if notFound, err := service.storage.Prune(element); err != nil {
 		return service.renderStorageError(context, err)
 	} else if notFound {
 		return service.renderNotFound(context, element.GetID())
@@ -1496,7 +1496,7 @@ func (service ResourceService[IDT, RT]) Restore(context Context) error {
 		return err
 	}
 
-	if notFound, err := service.storage.Restore(&element); err != nil {
+	if notFound, err := service.storage.Restore(element); err != nil {
 		return service.renderStorageError(context, err)
 	} else if notFound {
 		return service.renderNotFound(context, element.GetID())

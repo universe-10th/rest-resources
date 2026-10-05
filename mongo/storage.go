@@ -115,36 +115,36 @@ func (s *Storage[IDT, RT]) GetElements(
 	return elements, total, nil
 }
 
-func (s *Storage[IDT, RT]) Save(element *RT) (bool, error) {
-	if element == nil {
+func (s *Storage[IDT, RT]) Save(element RT) (bool, error) {
+	if isNilElement(element) {
 		return true, nil
 	}
 
-	if isZero((*element).GetID()) {
+	if isZero(element.GetID()) {
 		setGeneratedObjectID(element)
-		(*element).SetCreationTime()
-		(*element).SetLastUpdateTime()
-		_, err := s.collection.InsertOne(s.context(), derefElement(*element))
+		element.SetCreationTime()
+		element.SetLastUpdateTime()
+		_, err := s.collection.InsertOne(s.context(), derefElement(element))
 		return false, err
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), false)
+	existing, found, err := s.getByID(element.GetID(), false)
 	if err != nil || !found {
 		return !found, err
 	}
 
-	(*element).RestoreCreationTime(existing.GetCreationTime())
-	(*element).SetLastUpdateTime()
-	result, err := s.collection.ReplaceOne(s.context(), s.idFilter((*element).GetID()), derefElement(*element))
+	element.RestoreCreationTime(existing.GetCreationTime())
+	element.SetLastUpdateTime()
+	result, err := s.collection.ReplaceOne(s.context(), s.idFilter(element.GetID()), derefElement(element))
 	return result == nil || result.MatchedCount == 0, err
 }
 
-func (s *Storage[IDT, RT]) Delete(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Delete(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), false)
+	existing, found, err := s.getByID(element.GetID(), false)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -176,12 +176,12 @@ func (s *Storage[IDT, RT]) AddIDFilter(filter *types.FilterExpression, id IDT) {
 	})
 }
 
-func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Restore(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), true)
+	existing, found, err := s.getByID(element.GetID(), true)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -195,17 +195,17 @@ func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
 	softDeleted.SetLastUpdateTime()
 	result, err := s.collection.ReplaceOne(s.context(), s.idFilter(existing.GetID()), derefElement(existing))
 	if err == nil {
-		*element = existing
+		copyElement(element, existing)
 	}
 	return result == nil || result.MatchedCount == 0, err
 }
 
-func (s *Storage[IDT, RT]) Prune(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Prune(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), true)
+	existing, found, err := s.getByID(element.GetID(), true)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -290,17 +290,34 @@ func derefElement[RT any](element RT) any {
 	return element
 }
 
+func copyElement[RT any](target RT, source RT) {
+	targetValue := reflect.ValueOf(target)
+	sourceValue := reflect.ValueOf(source)
+	if !targetValue.IsValid() || !sourceValue.IsValid() ||
+		targetValue.Kind() != reflect.Pointer || sourceValue.Kind() != reflect.Pointer ||
+		targetValue.IsNil() || sourceValue.IsNil() {
+		return
+	}
+
+	targetValue.Elem().Set(sourceValue.Elem())
+}
+
+func isNilElement[RT any](element RT) bool {
+	value := reflect.ValueOf(element)
+	return !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil())
+}
+
 func isZero[T comparable](value T) bool {
 	var zero T
 	return value == zero
 }
 
-func setGeneratedObjectID[IDT comparable, RT types.Resource[IDT]](element *RT) {
-	id, ok := any((*element).GetID()).(bson.ObjectID)
+func setGeneratedObjectID[IDT comparable, RT types.Resource[IDT]](element RT) {
+	id, ok := any(element.GetID()).(bson.ObjectID)
 	if !ok || !id.IsZero() {
 		return
 	}
 
 	generated := any(bson.NewObjectID()).(IDT)
-	(*element).SetID(generated)
+	element.SetID(generated)
 }

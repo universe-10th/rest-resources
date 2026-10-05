@@ -105,21 +105,21 @@ func (s *Storage[IDT, RT]) GetElements(
 	return elements[start:end], total, nil
 }
 
-func (s *Storage[IDT, RT]) Save(element *RT) (bool, error) {
-	if element == nil {
+func (s *Storage[IDT, RT]) Save(element RT) (bool, error) {
+	if isNilElement(element) {
 		return true, nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := (*element).GetID()
+	id := element.GetID()
 	if isZero(id) {
 		id = s.nextID()
-		(*element).SetID(id)
-		(*element).SetCreationTime()
-		(*element).SetLastUpdateTime()
-		s.elements[id] = cloneElement(*element)
+		element.SetID(id)
+		element.SetCreationTime()
+		element.SetLastUpdateTime()
+		s.elements[id] = cloneElement(element)
 		return false, nil
 	}
 
@@ -128,21 +128,21 @@ func (s *Storage[IDT, RT]) Save(element *RT) (bool, error) {
 		return true, nil
 	}
 
-	(*element).RestoreCreationTime(existing.GetCreationTime())
-	(*element).SetLastUpdateTime()
-	s.elements[id] = cloneElement(*element)
+	element.RestoreCreationTime(existing.GetCreationTime())
+	element.SetLastUpdateTime()
+	s.elements[id] = cloneElement(element)
 	return false, nil
 }
 
-func (s *Storage[IDT, RT]) Delete(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Delete(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing, ok := s.elements[(*element).GetID()]
+	existing, ok := s.elements[element.GetID()]
 	if !ok || isDeleted(existing) {
 		return true, nil
 	}
@@ -151,7 +151,7 @@ func (s *Storage[IDT, RT]) Delete(element *RT) (bool, error) {
 		softDeleted.SetDeletionTime()
 		softDeleted.SetLastUpdateTime()
 		s.elements[existing.GetID()] = cloneElement(softDeleted.(RT))
-		*element = cloneElement(softDeleted.(RT))
+		copyElement(element, softDeleted.(RT))
 		return false, nil
 	}
 
@@ -185,15 +185,15 @@ func (s *Storage[IDT, RT]) AddIDFilter(filter *types.FilterExpression, id IDT) {
 	})
 }
 
-func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Restore(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing, ok := s.elements[(*element).GetID()]
+	existing, ok := s.elements[element.GetID()]
 	if !ok {
 		return true, nil
 	}
@@ -206,19 +206,19 @@ func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
 	softDeleted.UnsetDeletionTime()
 	softDeleted.SetLastUpdateTime()
 	s.elements[existing.GetID()] = cloneElement(softDeleted.(RT))
-	*element = cloneElement(softDeleted.(RT))
+	copyElement(element, softDeleted.(RT))
 	return false, nil
 }
 
-func (s *Storage[IDT, RT]) Prune(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Prune(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing, ok := s.elements[(*element).GetID()]
+	existing, ok := s.elements[element.GetID()]
 	if !ok || !isDeleted(existing) {
 		return true, nil
 	}
@@ -465,6 +465,23 @@ func cloneElement[RT any](element RT) RT {
 	clone := reflect.New(value.Elem().Type())
 	clone.Elem().Set(value.Elem())
 	return clone.Interface().(RT)
+}
+
+func copyElement[RT any](target RT, source RT) {
+	targetValue := reflect.ValueOf(target)
+	sourceValue := reflect.ValueOf(source)
+	if !targetValue.IsValid() || !sourceValue.IsValid() ||
+		targetValue.Kind() != reflect.Pointer || sourceValue.Kind() != reflect.Pointer ||
+		targetValue.IsNil() || sourceValue.IsNil() {
+		return
+	}
+
+	targetValue.Elem().Set(sourceValue.Elem())
+}
+
+func isNilElement[RT any](element RT) bool {
+	value := reflect.ValueOf(element)
+	return !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil())
 }
 
 func isZero[T comparable](value T) bool {

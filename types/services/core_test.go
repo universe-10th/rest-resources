@@ -758,10 +758,10 @@ func (s coreConstraintStorage[IDT, RT]) GetElement(*types.FilterExpression) (RT,
 func (s coreConstraintStorage[IDT, RT]) GetElements(*types.FilterExpression, *types.SortExpression, int64, int64) ([]RT, int64, error) {
 	return nil, 0, nil
 }
-func (s coreConstraintStorage[IDT, RT]) Save(*RT) (bool, error)    { return false, nil }
-func (s coreConstraintStorage[IDT, RT]) Delete(*RT) (bool, error)  { return false, nil }
-func (s coreConstraintStorage[IDT, RT]) Restore(*RT) (bool, error) { return false, nil }
-func (s coreConstraintStorage[IDT, RT]) Prune(*RT) (bool, error)   { return false, nil }
+func (s coreConstraintStorage[IDT, RT]) Save(RT) (bool, error)    { return false, nil }
+func (s coreConstraintStorage[IDT, RT]) Delete(RT) (bool, error)  { return false, nil }
+func (s coreConstraintStorage[IDT, RT]) Restore(RT) (bool, error) { return false, nil }
+func (s coreConstraintStorage[IDT, RT]) Prune(RT) (bool, error)   { return false, nil }
 func (s coreConstraintStorage[IDT, RT]) ValidateFilter(*types.FilterExpression) error {
 	return nil
 }
@@ -844,24 +844,24 @@ func (s *endpointStorage) GetElements(filter *types.FilterExpression, sort *type
 	s.limit = limit
 	return s.elements, s.total, nil
 }
-func (s *endpointStorage) Save(element **endpointTestResource) (bool, error) {
+func (s *endpointStorage) Save(element *endpointTestResource) (bool, error) {
 	s.calls = append(s.calls, "Save")
-	s.saved = *element
+	s.saved = element
 	return false, nil
 }
-func (s *endpointStorage) Delete(element **endpointTestResource) (bool, error) {
+func (s *endpointStorage) Delete(element *endpointTestResource) (bool, error) {
 	s.calls = append(s.calls, "Delete")
-	s.deleted = *element
+	s.deleted = element
 	return false, nil
 }
-func (s *endpointStorage) Restore(element **endpointTestResource) (bool, error) {
+func (s *endpointStorage) Restore(element *endpointTestResource) (bool, error) {
 	s.calls = append(s.calls, "Restore")
-	s.restored = *element
+	s.restored = element
 	return false, nil
 }
-func (s *endpointStorage) Prune(element **endpointTestResource) (bool, error) {
+func (s *endpointStorage) Prune(element *endpointTestResource) (bool, error) {
 	s.calls = append(s.calls, "Prune")
-	s.pruned = *element
+	s.pruned = element
 	return false, nil
 }
 func (s *endpointStorage) ValidateFilter(*types.FilterExpression) error {

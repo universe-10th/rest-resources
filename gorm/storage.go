@@ -84,33 +84,33 @@ func (s *Storage[IDT, RT]) GetElements(
 	return elements, total, nil
 }
 
-func (s *Storage[IDT, RT]) Save(element *RT) (bool, error) {
-	if element == nil {
+func (s *Storage[IDT, RT]) Save(element RT) (bool, error) {
+	if isNilElement(element) {
 		return true, nil
 	}
 
-	if isZero((*element).GetID()) {
-		(*element).SetCreationTime()
-		(*element).SetLastUpdateTime()
-		return false, s.db.Create(derefElement(*element)).Error
+	if isZero(element.GetID()) {
+		element.SetCreationTime()
+		element.SetLastUpdateTime()
+		return false, s.db.Create(derefElement(element)).Error
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), false)
+	existing, found, err := s.getByID(element.GetID(), false)
 	if err != nil || !found {
 		return !found, err
 	}
 
-	(*element).RestoreCreationTime(existing.GetCreationTime())
-	(*element).SetLastUpdateTime()
-	return false, s.db.Save(derefElement(*element)).Error
+	element.RestoreCreationTime(existing.GetCreationTime())
+	element.SetLastUpdateTime()
+	return false, s.db.Save(derefElement(element)).Error
 }
 
-func (s *Storage[IDT, RT]) Delete(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Delete(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), false)
+	existing, found, err := s.getByID(element.GetID(), false)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -141,12 +141,12 @@ func (s *Storage[IDT, RT]) AddIDFilter(filter *types.FilterExpression, id IDT) {
 	})
 }
 
-func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Restore(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), true)
+	existing, found, err := s.getByID(element.GetID(), true)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -160,17 +160,17 @@ func (s *Storage[IDT, RT]) Restore(element *RT) (bool, error) {
 	softDeleted.SetLastUpdateTime()
 	err = s.db.Unscoped().Save(derefElement(existing)).Error
 	if err == nil {
-		*element = existing
+		copyElement(element, existing)
 	}
 	return false, err
 }
 
-func (s *Storage[IDT, RT]) Prune(element *RT) (bool, error) {
-	if element == nil || isZero((*element).GetID()) {
+func (s *Storage[IDT, RT]) Prune(element RT) (bool, error) {
+	if isNilElement(element) || isZero(element.GetID()) {
 		return true, nil
 	}
 
-	existing, found, err := s.getByID((*element).GetID(), true)
+	existing, found, err := s.getByID(element.GetID(), true)
 	if err != nil || !found {
 		return !found, err
 	}
@@ -279,6 +279,23 @@ func newElementSlice[RT any]() ([]RT, any) {
 
 func derefElement[RT any](element RT) any {
 	return element
+}
+
+func copyElement[RT any](target RT, source RT) {
+	targetValue := reflect.ValueOf(target)
+	sourceValue := reflect.ValueOf(source)
+	if !targetValue.IsValid() || !sourceValue.IsValid() ||
+		targetValue.Kind() != reflect.Pointer || sourceValue.Kind() != reflect.Pointer ||
+		targetValue.IsNil() || sourceValue.IsNil() {
+		return
+	}
+
+	targetValue.Elem().Set(sourceValue.Elem())
+}
+
+func isNilElement[RT any](element RT) bool {
+	value := reflect.ValueOf(element)
+	return !value.IsValid() || (value.Kind() == reflect.Pointer && value.IsNil())
 }
 
 func isZero[T comparable](value T) bool {

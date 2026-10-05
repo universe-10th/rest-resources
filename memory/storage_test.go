@@ -33,7 +33,7 @@ func TestStorageSavesUpdatesFiltersSortsAndPages(t *testing.T) {
 	third := &memoryTestResource{Name: "alphabet", Rank: 3, Parent: 20}
 
 	for _, element := range []*memoryTestResource{first, second, third} {
-		if notFound, err := storage.Save(&element); err != nil || notFound {
+		if notFound, err := storage.Save(element); err != nil || notFound {
 			t.Fatalf("Save returned notFound=%v err=%v", notFound, err)
 		}
 		if element.ID == 0 {
@@ -43,7 +43,7 @@ func TestStorageSavesUpdatesFiltersSortsAndPages(t *testing.T) {
 
 	first.Name = "alpha-updated"
 	first.Rank = 4
-	if notFound, err := storage.Save(&first); err != nil || notFound {
+	if notFound, err := storage.Save(first); err != nil || notFound {
 		t.Fatalf("update Save returned notFound=%v err=%v", notFound, err)
 	}
 
@@ -84,11 +84,11 @@ func TestStorageSoftDeleteRestoreAndPrune(t *testing.T) {
 
 	storage := NewStorage[int, *memorySoftTestResource]()
 	element := &memorySoftTestResource{Name: "soft"}
-	if notFound, err := storage.Save(&element); err != nil || notFound {
+	if notFound, err := storage.Save(element); err != nil || notFound {
 		t.Fatalf("Save returned notFound=%v err=%v", notFound, err)
 	}
 
-	if notFound, err := storage.Delete(&element); err != nil || notFound {
+	if notFound, err := storage.Delete(element); err != nil || notFound {
 		t.Fatalf("Delete returned notFound=%v err=%v", notFound, err)
 	}
 
@@ -107,17 +107,17 @@ func TestStorageSoftDeleteRestoreAndPrune(t *testing.T) {
 		t.Fatalf("expected deleted element, found=%v err=%v element=%#v", found, err, deleted)
 	}
 
-	if notFound, err := storage.Restore(&deleted); err != nil || notFound {
+	if notFound, err := storage.Restore(deleted); err != nil || notFound {
 		t.Fatalf("Restore returned notFound=%v err=%v", notFound, err)
 	}
 	if deleted.DeletedAt != nil {
 		t.Fatalf("expected restored deletion timestamp to be nil, got %v", deleted.DeletedAt)
 	}
 
-	if notFound, err := storage.Delete(&deleted); err != nil || notFound {
+	if notFound, err := storage.Delete(deleted); err != nil || notFound {
 		t.Fatalf("second Delete returned notFound=%v err=%v", notFound, err)
 	}
-	if notFound, err := storage.Prune(&deleted); err != nil || notFound {
+	if notFound, err := storage.Prune(deleted); err != nil || notFound {
 		t.Fatalf("Prune returned notFound=%v err=%v", notFound, err)
 	}
 	if _, found, err := storage.GetElement(&deletedFilter); err != nil || found {
@@ -135,7 +135,7 @@ func TestStorageCustomIDGenerator(t *testing.T) {
 	})
 	element := &memoryStringIDResource{Name: "custom"}
 
-	if notFound, err := storage.Save(&element); err != nil || notFound {
+	if notFound, err := storage.Save(element); err != nil || notFound {
 		t.Fatalf("Save returned notFound=%v err=%v", notFound, err)
 	}
 	if element.ID == "" {
