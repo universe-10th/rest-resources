@@ -25,6 +25,37 @@ var (
 
 type contextKey struct{}
 
+type responseSentTracker interface {
+	ResponseAlreadySent() bool
+}
+
+type trackingResponseWriter struct {
+	http.ResponseWriter
+	sent bool
+}
+
+func (w *trackingResponseWriter) WriteHeader(statusCode int) {
+	if !w.sent {
+		w.sent = true
+	}
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *trackingResponseWriter) Write(data []byte) (int, error) {
+	if !w.sent {
+		w.sent = true
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *trackingResponseWriter) ResponseAlreadySent() bool {
+	return w.sent
+}
+
+func (w *trackingResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 type Context struct {
 	response     http.ResponseWriter
 	request      *http.Request
@@ -37,6 +68,7 @@ type Context struct {
 }
 
 func WrapContext(response http.ResponseWriter, request *http.Request) *Context {
+	response = ensureTrackingResponseWriter(response)
 	if wrapped, ok := request.Context().Value(contextKey{}).(*Context); ok {
 		wrapped.response = response
 		wrapped.request = request
@@ -132,6 +164,11 @@ func (c *Context) SetCookie(cookie services.Cookie) {
 		HttpOnly: cookie.HTTPOnly,
 		SameSite: toHTTPSameSite(cookie.SameSite),
 	})
+}
+
+func (c *Context) ResponseAlreadySent() bool {
+	tracker, ok := c.response.(responseSentTracker)
+	return ok && tracker.ResponseAlreadySent()
 }
 
 func (c *Context) GetData(name string) (any, bool) {
@@ -421,10 +458,11 @@ func handler(
 	handler services.HandlerFunc,
 ) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		wrapped := WrapContext(response, request)
+		trackingResponse := ensureTrackingResponseWriter(response)
+		wrapped := WrapContext(trackingResponse, request)
 		endpointHandler := applyMiddlewares(service, endpointType, verb, name, extra, handler)
 		if err := endpointHandler(wrapped); err != nil {
-			http.Error(response, err.Error(), http.StatusInternalServerError)
+			http.Error(trackingResponse, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
@@ -438,16 +476,24 @@ func httpMiddleware(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			wrapped := WrapContext(response, request)
+			trackingResponse := ensureTrackingResponseWriter(response)
+			wrapped := WrapContext(trackingResponse, request)
 			endpointHandler := applyMiddlewares(service, endpointType, verb, name, extra, func(context services.Context) error {
-				next.ServeHTTP(response, request)
+				next.ServeHTTP(trackingResponse, request)
 				return nil
 			})
 			if err := endpointHandler(wrapped); err != nil {
-				http.Error(response, err.Error(), http.StatusInternalServerError)
+				http.Error(trackingResponse, err.Error(), http.StatusInternalServerError)
 			}
 		})
 	}
+}
+
+func ensureTrackingResponseWriter(response http.ResponseWriter) http.ResponseWriter {
+	if _, ok := response.(responseSentTracker); ok {
+		return response
+	}
+	return &trackingResponseWriter{ResponseWriter: response}
 }
 
 func applyMiddlewares(

@@ -90,6 +90,9 @@ type Context interface {
 	// SetCookie adds a response cookie.
 	SetCookie(cookie Cookie)
 
+	// ResponseAlreadySent tells whether the response has already been sent.
+	ResponseAlreadySent() bool
+
 	// GetData retrieves arbitrary data for this context,
 	// typically stored by middleware functions.
 	GetData(name string) (any, bool)

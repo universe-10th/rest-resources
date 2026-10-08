@@ -137,6 +137,10 @@ func (context *Context) SetCookie(cookie services.Cookie) {
 	})
 }
 
+func (context *Context) ResponseAlreadySent() bool {
+	return context.context.Response().Committed
+}
+
 func (context *Context) GetData(name string) (any, bool) {
 	value := context.context.Get(echoContextUserDataPref + name)
 	return value, value != nil

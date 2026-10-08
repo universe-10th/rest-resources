@@ -907,6 +907,7 @@ func (c *endpointTestContext) BindJSON(target any) error {
 }
 func (c *endpointTestContext) SetHeader(string, string)   {}
 func (c *endpointTestContext) SetCookie(Cookie)           {}
+func (c *endpointTestContext) ResponseAlreadySent() bool  { return false }
 func (c *endpointTestContext) GetData(string) (any, bool) { return nil, false }
 func (c *endpointTestContext) SetData(string, any)        {}
 func (c *endpointTestContext) PushElement(element any) {
@@ -967,6 +968,7 @@ func (c coreConstraintContext) BindJSON(target any) error {
 }
 func (c coreConstraintContext) SetHeader(string, string)    {}
 func (c coreConstraintContext) SetCookie(Cookie)            {}
+func (c coreConstraintContext) ResponseAlreadySent() bool   { return false }
 func (c coreConstraintContext) GetData(string) (any, bool)  { return nil, false }
 func (c coreConstraintContext) SetData(string, any)         {}
 func (c coreConstraintContext) PushElement(any)             {}

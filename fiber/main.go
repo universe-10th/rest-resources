@@ -24,6 +24,7 @@ type Router interface {
 
 type Context struct {
 	context      fiberv3.Ctx
+	responseSent bool
 	stack        []any
 	service      any
 	endpointType services.EndpointType
@@ -121,6 +122,10 @@ func (c *Context) SetCookie(cookie services.Cookie) {
 	})
 }
 
+func (c *Context) ResponseAlreadySent() bool {
+	return c.responseSent
+}
+
 func (c *Context) GetData(name string) (any, bool) {
 	value := c.context.Locals(contextUserDataKeyPref + name)
 	return value, value != nil
@@ -152,11 +157,19 @@ func (c *Context) PeekElement(index int) (any, bool) {
 }
 
 func (c *Context) RenderJSON(status int, body any) error {
-	return c.context.Status(status).JSON(body)
+	err := c.context.Status(status).JSON(body)
+	if err == nil {
+		c.responseSent = true
+	}
+	return err
 }
 
 func (c *Context) RenderNoContent(status int) error {
-	return c.context.SendStatus(status)
+	err := c.context.SendStatus(status)
+	if err == nil {
+		c.responseSent = true
+	}
+	return err
 }
 
 func (c *Context) CurrentService() any {

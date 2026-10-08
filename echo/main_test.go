@@ -249,6 +249,26 @@ func TestContextRequestAndResponseHelpers(t *testing.T) {
 	}
 }
 
+func TestContextResponseAlreadySent(t *testing.T) {
+	t.Parallel()
+
+	app := echov4.New()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	native := app.NewContext(request, response)
+	context := WrapContext(native)
+
+	if context.ResponseAlreadySent() {
+		t.Fatal("expected response not to be sent before rendering")
+	}
+	if err := context.RenderNoContent(http.StatusNoContent); err != nil {
+		t.Fatalf("RenderNoContent returned error: %v", err)
+	}
+	if !context.ResponseAlreadySent() {
+		t.Fatal("expected response to be sent after rendering")
+	}
+}
+
 func TestSameSiteMapping(t *testing.T) {
 	t.Parallel()
 

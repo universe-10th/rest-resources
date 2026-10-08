@@ -129,6 +129,24 @@ func TestWrapContextReturnsRequestEnvelope(t *testing.T) {
 	requireStatus(t, performRequest(t, router, http.MethodGet, "/items/42", nil), http.StatusNoContent)
 }
 
+func TestContextResponseAlreadySent(t *testing.T) {
+	t.Parallel()
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	context := WrapContext(response, request)
+
+	if context.ResponseAlreadySent() {
+		t.Fatal("expected response not to be sent before rendering")
+	}
+	if err := context.RenderJSON(http.StatusOK, map[string]any{"ok": true}); err != nil {
+		t.Fatalf("RenderJSON returned error: %v", err)
+	}
+	if !context.ResponseAlreadySent() {
+		t.Fatal("expected response to be sent after rendering")
+	}
+}
+
 func TestMustInstallPanicsForInvalidRootInputs(t *testing.T) {
 	t.Parallel()
 

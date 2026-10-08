@@ -337,6 +337,27 @@ func TestFiberSameSiteMapping(t *testing.T) {
 	}
 }
 
+func TestContextResponseAlreadySent(t *testing.T) {
+	t.Parallel()
+
+	app := fiberv3.New()
+	app.Get("/", func(native fiberv3.Ctx) error {
+		context := WrapContext(native)
+		if context.ResponseAlreadySent() {
+			t.Fatal("expected response not to be sent before rendering")
+		}
+		if err := context.RenderNoContent(http.StatusNoContent); err != nil {
+			return err
+		}
+		if !context.ResponseAlreadySent() {
+			t.Fatal("expected response to be sent after rendering")
+		}
+		return nil
+	})
+
+	requireStatus(t, performRequest(t, app, http.MethodGet, "/", nil), http.StatusNoContent)
+}
+
 func TestInstallCollectionExtraAndElementExtra(t *testing.T) {
 	t.Parallel()
 

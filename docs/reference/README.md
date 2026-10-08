@@ -51,7 +51,8 @@ Install errors:
 
 - request reads: `Native`, `GetPathParam`, `GetQueryParam`, `GetQueryParams`,
   `GetHeader`, `GetHeaders`, `GetCookie`, `BindJSON`
-- response writes: `SetHeader`, `SetCookie`, `RenderJSON`, `RenderNoContent`
+- response writes: `SetHeader`, `SetCookie`, `ResponseAlreadySent`,
+  `RenderJSON`, `RenderNoContent`
 - request data: `GetData`, `SetData`
 - resource stack: `PushElement`, `PopElement`, `PeekElement`
 - endpoint metadata: `CurrentService`, `CurrentEndpoint`, `Setup`
@@ -318,7 +319,8 @@ Service callbacks and middleware are documented in
 
 `Context` is the callback-facing request and response API. It exposes request
 metadata, JSON binding, response rendering, cookies, arbitrary request data,
-endpoint metadata, and a stack of parent/current resource elements.
+response state, endpoint metadata, and a stack of parent/current resource
+elements.
 
 `ParsePathParam[T comparable](value string) (T, error)` parses strings into
 supported ID types: strings, signed and unsigned integers, bools, and types that
