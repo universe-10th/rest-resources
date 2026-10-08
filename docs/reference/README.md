@@ -49,13 +49,17 @@ Install errors:
 
 `Context` implements:
 
-- request reads: `Native`, `GetPathParam`, `GetQueryParam`, `GetQueryParams`,
-  `GetHeader`, `GetHeaders`, `GetCookie`, `BindJSON`
+- request reads: `Native`, `RequestContext`, `GetPathParam`, `GetQueryParam`,
+  `GetQueryParams`, `GetHeader`, `GetHeaders`, `GetCookie`, `BindJSON`
 - response writes: `SetHeader`, `SetCookie`, `ResponseAlreadySent`,
   `RenderJSON`, `RenderNoContent`
 - request data: `GetData`, `SetData`
 - resource stack: `PushElement`, `PopElement`, `PeekElement`
 - endpoint metadata: `CurrentService`, `CurrentEndpoint`, `Setup`
+
+Use `RequestContext() context.Context` when passing cancellation, deadlines, or
+request-scoped values to lower-level APIs such as storage clients. `Native()`
+remains available when framework-specific behavior is required.
 
 ### `fiber`
 

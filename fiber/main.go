@@ -1,6 +1,7 @@
 package fiber
 
 import (
+	"context"
 	"errors"
 	"reflect"
 
@@ -45,6 +46,10 @@ func WrapContext(c fiberv3.Ctx) *Context {
 
 func (c *Context) Native() any {
 	return c.context
+}
+
+func (c *Context) RequestContext() context.Context {
+	return c.context.Context()
 }
 
 func (c *Context) GetPathParam(name string) (string, error) {

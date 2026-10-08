@@ -84,6 +84,10 @@ func (c *Context) Native() any {
 	return c.request
 }
 
+func (c *Context) RequestContext() context.Context {
+	return c.request.Context()
+}
+
 func (c *Context) GetPathParam(name string) (string, error) {
 	value := chiv5.URLParam(c.request, name)
 	if value == "" {

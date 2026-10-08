@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding"
 	"reflect"
 	"strconv"
@@ -62,6 +63,10 @@ type Context interface {
 	// Native gets the underlying native context, according
 	// to what the underlying library supports.
 	Native() any
+
+	// RequestContext gets the Go request context, including
+	// cancellation, deadlines and request-scoped values.
+	RequestContext() context.Context
 
 	// GetPathParam gets a param from the URL path.
 	GetPathParam(string) (string, error)

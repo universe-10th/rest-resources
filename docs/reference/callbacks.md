@@ -5,6 +5,10 @@ They all receive `services.Context`, which hides the web framework while still
 providing request data, response helpers, endpoint metadata, and the element
 stack.
 
+Use `Context.RequestContext()` to pass the request's Go `context.Context` to
+lower-level APIs that honor cancellation, deadlines, or request-scoped values.
+Use `Context.Native()` only when a callback needs framework-specific behavior.
+
 ## `FilterFunc`
 
 ```go

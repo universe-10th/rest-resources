@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -886,6 +887,7 @@ type endpointTestContext struct {
 }
 
 func (c *endpointTestContext) Native() any                         { return nil }
+func (c *endpointTestContext) RequestContext() context.Context     { return context.Background() }
 func (c *endpointTestContext) GetPathParam(string) (string, error) { return "", nil }
 func (c *endpointTestContext) GetQueryParam(name string) (string, error) {
 	return c.query[name], nil
@@ -949,6 +951,7 @@ type coreConstraintContext struct {
 }
 
 func (c coreConstraintContext) Native() any                             { return nil }
+func (c coreConstraintContext) RequestContext() context.Context         { return context.Background() }
 func (c coreConstraintContext) GetPathParam(string) (string, error)     { return "", nil }
 func (c coreConstraintContext) GetQueryParam(string) (string, error)    { return "", nil }
 func (c coreConstraintContext) GetQueryParams(string) ([]string, error) { return nil, nil }

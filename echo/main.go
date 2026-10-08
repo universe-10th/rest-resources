@@ -1,6 +1,7 @@
 package echo
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"reflect"
@@ -46,6 +47,10 @@ func WrapContext(c echov4.Context) *Context {
 
 func (context *Context) Native() any {
 	return context.context
+}
+
+func (context *Context) RequestContext() context.Context {
+	return context.context.Request().Context()
 }
 
 func (context *Context) GetPathParam(name string) (string, error) {
